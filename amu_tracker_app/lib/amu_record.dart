@@ -4,8 +4,9 @@ class AMURecord {
   final String phoneNumber;
   final String antimicrobialName;
   final String animalType;
+  final String animalId; 
   final String dosage;
-  final String reasonForUse;
+  final String reason;
   final DateTime date;
   final String status;
 
@@ -14,8 +15,9 @@ class AMURecord {
     required this.phoneNumber,
     required this.antimicrobialName,
     required this.animalType,
+    required this.animalId,
     required this.dosage,
-    required this.reasonForUse,
+    required this.reason,
     required this.date,
     this.status = 'pending',
   });
@@ -26,8 +28,9 @@ class AMURecord {
       phoneNumber: this.phoneNumber,
       antimicrobialName: this.antimicrobialName,
       animalType: this.animalType,
+      animalId: this.animalId,
       dosage: this.dosage,
-      reasonForUse: this.reasonForUse,
+      reason: this.reason,
       date: this.date,
       status: status ?? this.status,
     );

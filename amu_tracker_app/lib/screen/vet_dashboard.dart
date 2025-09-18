@@ -4,361 +4,350 @@ import '../amu_record.dart';
 import '../utils/helpers.dart';
 import 'amu_details_form.dart';
 
-// ===================== ENHANCED VET DASHBOARD =====================
 class VetDashboard extends StatefulWidget {
+  const VetDashboard({super.key});
+
   @override
-  _VetDashboardState createState() => _VetDashboardState();
+  State<VetDashboard> createState() => _VetDashboardState();
 }
 
 class _VetDashboardState extends State<VetDashboard> {
+  int _selectedIndex = 0;
+  late final List<Widget> _pages;
+
+  @override
+  void initState() {
+    super.initState();
+    _pages = [
+      _VetDashboardPage(onRecordUpdate: () => setState(() {})),
+      _VetRecordsPage(onRecordAdded: () => setState(() {})),
+      const _VetAlertsPage(),
+      _VetProfilePage(),
+    ];
+  }
+
+  void _onItemTapped(int index) {
+    setState(() {
+      _selectedIndex = index;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
-    final pendingRecords = DataStore.records.where((r) => r.status == 'pending').length;
+    return Scaffold(
+      body: IndexedStack(
+        index: _selectedIndex,
+        children: _pages,
+      ),
+      bottomNavigationBar: BottomNavigationBar(
+        currentIndex: _selectedIndex,
+        onTap: _onItemTapped,
+        backgroundColor: const Color(0xFF558B2F),
+        selectedItemColor: Colors.white,
+        unselectedItemColor: Colors.white70,
+        type: BottomNavigationBarType.fixed,
+        items: const <BottomNavigationBarItem>[
+          BottomNavigationBarItem(
+            icon: Icon(Icons.dashboard_rounded),
+            label: 'Dashboard (डैशबोर्ड)',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.folder_copy_rounded),
+            label: 'History (इतिहास)',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.notifications_rounded),
+            label: 'Alerts (सूचनाएं)',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.person_rounded),
+            label: 'Profile (प्रोफ़ाइल)',
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _VetDashboardPage extends StatelessWidget {
+  final VoidCallback onRecordUpdate;
+  const _VetDashboardPage({required this.onRecordUpdate});
+
+  void _updateRecordStatus(BuildContext context, AMURecord record, String newStatus) {
+    final index = DataStore.records.indexWhere((r) => r == record);
+    if (index != -1) {
+      DataStore.records[index] = record.copyWith(status: newStatus);
+      onRecordUpdate();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Record has been ${newStatus.toLowerCase()}!'),
+          backgroundColor: newStatus == 'approved' ? Colors.green : Colors.red,
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final pendingRecords = DataStore.records.where((r) => r.status == 'pending').toList();
 
     return Scaffold(
-      backgroundColor: Color(0xFFF2FCFE),
       appBar: AppBar(
-        title: Text(
-          'पशु चिकित्सक डैशबोर्ड (Vet Dashboard)',
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-        ),
-        backgroundColor: Color(0xFF0F7F19),
-        elevation: 0,
+        backgroundColor: const Color(0xFF558B2F),
+        foregroundColor: Colors.white,
+        title: const Text('Review Pending (लंबित समीक्षा)'),
+        actions: [IconButton(icon: const Icon(Icons.logout), onPressed: () => logout(context))],
+      ),
+      body: pendingRecords.isEmpty
+          ? Center(
+              child: Text(
+                'No pending records to review.',
+                style: TextStyle(fontSize: 16, color: Colors.grey.shade600),
+              ),
+            )
+          : ListView.builder(
+              padding: const EdgeInsets.all(8.0),
+              itemCount: pendingRecords.length,
+              itemBuilder: (context, index) {
+                final record = pendingRecords[index];
+                return Card(
+                  margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  elevation: 3,
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Farmer (किसान): ${record.farmerName}', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                        const Divider(height: 20),
+                        Text('Animal (पशु): ${record.animalType} (ID: ${record.animalId})'),
+                        Text('Drug (दवा): ${record.antimicrobialName}'),
+                        Text('Dosage (खुराक): ${record.dosage}'),
+                        Text('Reason (कारण): ${record.reason}'),
+                        const SizedBox(height: 16),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
+                            TextButton.icon(
+                              icon: const Icon(Icons.close),
+                              label: const Text('Reject (अस्वीकार)'),
+                              style: TextButton.styleFrom(foregroundColor: Colors.red),
+                              onPressed: () => _updateRecordStatus(context, record, 'rejected'),
+                            ),
+                            const SizedBox(width: 8),
+                            ElevatedButton.icon(
+                              icon: const Icon(Icons.check, color: Colors.white),
+                              label: const Text('Approve (स्वीकार)', style: TextStyle(color: Colors.white)),
+                              style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+                              onPressed: () => _updateRecordStatus(context, record, 'approved'),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+    );
+  }
+}
+
+class _VetRecordsPage extends StatelessWidget {
+  final VoidCallback onRecordAdded;
+  const _VetRecordsPage({required this.onRecordAdded});
+
+  Color _getStatusColor(String status) {
+    switch (status) {
+      case 'approved': return Colors.green;
+      case 'rejected': return Colors.red;
+      default: return Colors.orange;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final allRecords = DataStore.records;
+
+    return Scaffold(
+      appBar: AppBar(
+        backgroundColor: const Color(0xFF558B2F),
+        foregroundColor: Colors.white,
+        title: const Text('All Records History (सभी रिकॉर्ड)'),
+      ),
+      body: allRecords.isEmpty
+          ? Center(
+              child: Text(
+                'No records in the system yet.',
+                style: TextStyle(fontSize: 16, color: Colors.grey.shade600),
+              ),
+            )
+          : ListView.builder(
+              padding: const EdgeInsets.fromLTRB(8, 8, 8, 80),
+              itemCount: allRecords.length,
+              itemBuilder: (context, index) {
+                final record = allRecords[index];
+                return Card(
+                  margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  shape: RoundedRectangleBorder(
+                    side: BorderSide(color: _getStatusColor(record.status), width: 1.5),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: ListTile(
+                    contentPadding: const EdgeInsets.all(16),
+                    title: Text('Farmer (किसान): ${record.farmerName}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                    subtitle: Text('Animal ID: ${record.animalId}\nDrug (दवा): ${record.antimicrobialName}'),
+                    trailing: Chip(
+                      label: Text(record.status.toUpperCase(), style: const TextStyle(color: Colors.white)),
+                      backgroundColor: _getStatusColor(record.status),
+                    ),
+                  ),
+                );
+              },
+            ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () {
+          Navigator.push<bool>(context, MaterialPageRoute(builder: (context) => AMUDetailsForm(userRole: 'Vet')))
+              .then((value) {
+            if (value == true) onRecordAdded();
+          });
+        },
+        backgroundColor: const Color(0xFF558B2F),
+        icon: const Icon(Icons.add, color: Colors.white),
+        label: const Text("Add Record (रिकॉर्ड जोड़ें)", style: TextStyle(color: Colors.white)),
+      ),
+    );
+  }
+}
+
+class _VetAlertsPage extends StatelessWidget {
+  const _VetAlertsPage();
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        backgroundColor: const Color(0xFF558B2F),
+        foregroundColor: Colors.white,
+        title: const Text('System Alerts (सिस्टम सूचनाएं)'),
+      ),
+      body: DataStore.records.isEmpty
+          ? Center(
+              child: Text(
+                'No notifications available.',
+                style: TextStyle(fontSize: 16, color: Colors.grey.shade600),
+              ),
+            )
+          : ListView.builder(
+              padding: const EdgeInsets.all(8.0),
+              itemCount: DataStore.records.length,
+              itemBuilder: (context, index) {
+                final record = DataStore.records[index];
+                final nextDoseDate = record.date.add(const Duration(days: 90));
+                const withdrawalDays = 15;
+                return Card(
+                  margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  child: ListTile(
+                    leading: Icon(Icons.warning_amber_rounded, color: Colors.orange.shade800, size: 36),
+                    title: Text('Alert for (सूचना): ${record.animalId} (Farmer: ${record.farmerName})'),
+                    subtitle: Text(
+                      'Next Dose (अगली खुराक): ${nextDoseDate.day}/${nextDoseDate.month}/${nextDoseDate.year}\nWithdrawal (निकासी): $withdrawalDays days',
+                    ),
+                  ),
+                );
+              },
+            ),
+    );
+  }
+}
+
+class _VetProfilePage extends StatefulWidget {
+  @override
+  _VetProfilePageState createState() => _VetProfilePageState();
+}
+
+class _VetProfilePageState extends State<_VetProfilePage> {
+  bool _isEditing = false;
+  late TextEditingController _nameController;
+  late TextEditingController _licenseController;
+  late TextEditingController _phoneController;
+  late TextEditingController _emailController;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameController = TextEditingController(text: DataStore.currentUser);
+    _licenseController = TextEditingController(text: 'VET12345');
+    _phoneController = TextEditingController(text: '9876543210');
+    _emailController = TextEditingController(text: '${DataStore.currentUser}@vet.com');
+  }
+  
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _licenseController.dispose();
+    _phoneController.dispose();
+    _emailController.dispose();
+    super.dispose();
+  }
+
+  void _toggleEditSave() {
+    setState(() {
+      if (_isEditing) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Profile saved!'), backgroundColor: Colors.green),
+        );
+      }
+      _isEditing = !_isEditing;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        backgroundColor: const Color(0xFF558B2F),
+        foregroundColor: Colors.white,
+        title: const Text('Vet Profile (प्रोफ़ाइल)'),
         actions: [
-          IconButton(
-            icon: Icon(Icons.logout, size: 28),
-            onPressed: () => logout(context),
+          Padding(
+            padding: const EdgeInsets.only(right: 8.0),
+            child: TextButton.icon(
+              onPressed: _toggleEditSave,
+              style: TextButton.styleFrom(foregroundColor: Colors.white),
+              icon: Icon(_isEditing ? Icons.save : Icons.edit),
+              label: Text(_isEditing ? 'Save (सेव करें)' : 'Edit (बदलें)'),
+            ),
           )
         ],
       ),
-      body: Padding(
-        padding: EdgeInsets.all(16),
-        child: Column(
-          children: [
-            // Stats card
-            Container(
-              width: double.infinity,
-              padding: EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                boxShadow: [
-                  BoxShadow(color: Colors.grey.withOpacity(0.1), blurRadius: 5),
-                ],
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                children: [
-                  Column(
-                    children: [
-                      Text('$pendingRecords', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.orange)),
-                      Text('प्रतीक्षा में (Pending)', style: TextStyle(fontSize: 12)),
-                    ],
-                  ),
-                  Column(
-                    children: [
-                      Text('${DataStore.records.length}', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Color(0xFF0F7F19))),
-                      Text('कुल रिकॉर्ड (Total)', style: TextStyle(fontSize: 12)),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            SizedBox(height: 20),
-
-            Row(
-              children: [
-                Expanded(
-                  child: _buildLargeActionButton(
-                    'अपना रिकॉर्ड\nजोड़ें\n(Add Record)',
-                    Icons.add_circle_outline,
-                    Color(0xFF4CAF50),
-                    () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => AMUDetailsForm(userRole: 'Vet'),
-                      ),
-                    ),
-                  ),
-                ),
-                SizedBox(width: 12),
-                Expanded(
-                  child: _buildLargeActionButton(
-                    'वीडियो\nसलाह\n(Consultation)',
-                    Icons.video_call,
-                    Color(0xFF2196F3),
-                    () => showPlaceholderDialog(context, 'Video Consultation'),
-                  ),
-                ),
-              ],
-            ),
-            SizedBox(height: 20),
-
-            Expanded(
-              child: DataStore.records.isEmpty
-                  ? Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.inbox, size: 80, color: Colors.grey[400]),
-                          SizedBox(height: 16),
-                          Text(
-                            'कोई रिकॉर्ड समीक्षा के लिए नहीं\n(No records to review)',
-                            style: TextStyle(fontSize: 18, color: Colors.grey[600]),
-                            textAlign: TextAlign.center,
-                          ),
-                        ],
-                      ),
-                    )
-                  : ListView.builder(
-                      itemCount: DataStore.records.length,
-                      itemBuilder: (context, index) =>
-                          _buildEnhancedVetRecordCard(DataStore.records[index]),
-                    ),
-            ),
-          ],
-        ),
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => showPlaceholderDialog(context, 'Notifications'),
-        backgroundColor: Color(0xFFFFC107),
-        icon: Icon(Icons.notifications, size: 28),
-        label: Text('सूचना (Alert)', style: TextStyle(fontSize: 16)),
-      ),
-    );
-  }
-
-  Widget _buildLargeActionButton(
-      String title, IconData icon, Color color, VoidCallback onPressed) {
-    return Container(
-      height: 120,
-      child: ElevatedButton(
-        onPressed: onPressed,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: color,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(15),
-          ),
-          elevation: 3,
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, size: 40, color: Colors.white),
-            SizedBox(height: 8),
-            Text(
-              title,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-                fontSize: 14,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildEnhancedVetRecordCard(AMURecord record) {
-    Color statusColor;
-    switch (record.status) {
-      case 'approved':
-        statusColor = Colors.green;
-        break;
-      case 'rejected':
-        statusColor = Colors.red;
-        break;
-      default:
-        statusColor = Colors.orange;
-    }
-
-    return Container(
-      margin: EdgeInsets.only(bottom: 12),
-      padding: EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(color: Colors.grey.withOpacity(0.1), blurRadius: 5),
-        ],
-        border: Border(
-          left: BorderSide(color: statusColor, width: 4),
-        ),
-      ),   
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      body: ListView(
+        padding: const EdgeInsets.all(16.0),
         children: [
-          Row(
-            children: [
-              Icon(Icons.person, color: Color(0xFF0F7F19), size: 20),
-              SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  'किसान: ${record.farmerName} (Farmer)',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                ),
-              ),
-              if (record.status == 'pending')
-                Container(
-                  padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.orange,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(
-                    'नया (NEW)',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-            ],
-          ),
-          SizedBox(height: 12),
-          
-          // Medicine and Animal info
-          Row(
-            children: [
-              Icon(Icons.medication, color: Colors.grey[600], size: 18),
-              SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  '${record.antimicrobialName}',
-                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
-                ),
-              ),
-            ],
-          ),
-          SizedBox(height: 6),
-          
-          Row(
-            children: [
-              Icon(Icons.pets, color: Colors.grey[600], size: 18),
-              SizedBox(width: 8),
-              Text('${record.animalType}', style: TextStyle(fontSize: 14)),
-              SizedBox(width: 20),
-              Icon(Icons.phone, color: Colors.grey[600], size: 18),
-              SizedBox(width: 8),
-              Text('${record.phoneNumber}', style: TextStyle(fontSize: 14)),
-            ],
-          ),
-          SizedBox(height: 6),
-          
-          Row(
-            children: [
-              Icon(Icons.colorize, color: Colors.grey[600], size: 18),
-              SizedBox(width: 8),
-              Text('खुराक: ${record.dosage}', style: TextStyle(fontSize: 14)),
-              SizedBox(width: 20),
-              Icon(Icons.calendar_today, color: Colors.grey[600], size: 18),
-              SizedBox(width: 8),
-              Text('${record.date.day}/${record.date.month}/${record.date.year}', 
-                   style: TextStyle(fontSize: 14)),
-            ],
-          ),
-          SizedBox(height: 6),
-          
-          Row(
-            children: [
-              Icon(Icons.healing, color: Colors.grey[600], size: 18),
-              SizedBox(width: 8),
-              Expanded(
-                child: Text('कारण: ${record.reasonForUse}', style: TextStyle(fontSize: 14)),
-              ),
-            ],
-          ),
-          
-          if (record.status == 'pending') ...[
-            SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: () {
-                      setState(() {
-                        int idx = DataStore.records.indexOf(record);
-                        DataStore.records[idx] = record.copyWith(status: 'approved');
-                      });
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('रिकॉर्ड स्वीकृत किया गया! (Record approved!)'),
-                          backgroundColor: Colors.green,
-                        ),
-                      );
-                    },
-                    icon: Icon(Icons.check, color: Colors.white),
-                    label: Text(
-                      'स्वीकार करें (Approve)',
-                      style: TextStyle(color: Colors.white, fontSize: 14),
-                    ),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.green,
-                      foregroundColor: Colors.white,
-                      padding: EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                    ),
-                  ),
-                ),
-                SizedBox(width: 12),
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: () {
-                      setState(() {
-                        int idx = DataStore.records.indexOf(record);
-                        DataStore.records[idx] = record.copyWith(status: 'rejected');
-                      });
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('रिकॉर्ड अस्वीकार किया गया! (Record rejected!)'),
-                          backgroundColor: Colors.red,
-                        ),
-                      );
-                    },
-                    icon: Icon(Icons.close, color: Colors.white),
-                    label: Text(
-                      'अस्वीकार करें (Reject)',
-                      style: TextStyle(color: Colors.white, fontSize: 14),
-                    ),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.red,
-                      foregroundColor: Colors.white,
-                      padding: EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ] else ...[
-            SizedBox(height: 12),
-            Row(
-              children: [
-                Icon(
-                  record.status == 'approved' ? Icons.check_circle : Icons.cancel,
-                  color: statusColor,
-                  size: 20,
-                ),
-                SizedBox(width: 8),
-                Text(
-                  record.status == 'approved' ? 'स्वीकृत (Approved)' : 'अस्वीकृत (Rejected)',
-                  style: TextStyle(
-                    color: statusColor,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                  ),
-                ),
-              ],
-            ),
-          ],
+          _buildProfileField(_nameController, 'Full Name (पूरा नाम)', Icons.person, enabled: _isEditing),
+          const SizedBox(height: 16),
+          _buildProfileField(_licenseController, 'License Number (लाइसेंस नंबर)', Icons.verified_user, enabled: _isEditing),
+          const SizedBox(height: 16),
+          _buildProfileField(_phoneController, 'Phone Number (फ़ोन नंबर)', Icons.phone, enabled: _isEditing, isNumeric: true),
+          const SizedBox(height: 16),
+          _buildProfileField(_emailController, 'Email Address (ईमेल पता)', Icons.email, enabled: _isEditing),
         ],
+      ),
+    );
+  }
+
+  Widget _buildProfileField(TextEditingController controller, String label, IconData icon,
+      {required bool enabled, bool isNumeric = false}) {
+    return TextFormField(
+      controller: controller,
+      enabled: enabled,
+      keyboardType: isNumeric ? TextInputType.number : TextInputType.text,
+      decoration: InputDecoration(
+        labelText: label,
+        prefixIcon: Icon(icon),
+        border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))),
+        filled: !enabled,
+        fillColor: Colors.grey.shade200,
       ),
     );
   }
