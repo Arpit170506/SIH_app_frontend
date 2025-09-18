@@ -11,6 +11,11 @@
 .svn/
 .swiftpm/
 migrate_working_dir/
+*.lock
+*.apk
+*.aab
+*.xcworkspace
+*.flutter-plugins
 
 # IntelliJ related
 *.iml
@@ -32,6 +37,9 @@ migrate_working_dir/
 .pub/
 /build/
 /coverage/
+.packages
+.flutter-plugins
+pubspec.lock
 
 # Symbolication related
 app.*.symbols
@@ -43,3 +51,8 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# IDEs
+.idea/
+.vscode/
+*.iml
