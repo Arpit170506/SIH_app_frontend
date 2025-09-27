@@ -56,3 +56,7 @@ app.*.map.json
 .idea/
 .vscode/
 *.iml
+
+# Node modules
+backend_node/node_modules/
+
