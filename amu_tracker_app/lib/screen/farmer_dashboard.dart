@@ -1,12 +1,10 @@
 import 'package:flutter/material.dart';
+import '../api_service.dart'; // Import the new service
 import '../data_store.dart';
 import '../amu_record.dart';
 import '../utils/helpers.dart';
 import 'amu_details_form.dart';
 
-// ===================================================================
-// MAIN FARMER DASHBOARD WIDGET (Manages Navigation and State)
-// ===================================================================
 class FarmerDashboard extends StatefulWidget {
   const FarmerDashboard({super.key});
 
@@ -16,26 +14,41 @@ class FarmerDashboard extends StatefulWidget {
 
 class _FarmerDashboardState extends State<FarmerDashboard> {
   int _selectedIndex = 0;
-  bool _hasNewNotifications = true;
+  bool _hasNewAlerts = false; 
+
+  // --- REFACTOR: Keys and ApiService instance ---
+  final ApiService _apiService = ApiService();
+  final GlobalKey<_DashboardPageState> _dashboardPageKey = GlobalKey<_DashboardPageState>();
+  final GlobalKey<_RecordsPageState> _recordsPageKey = GlobalKey<_RecordsPageState>();
 
   late final List<Widget> _pages;
 
   @override
   void initState() {
     super.initState();
+    // Pass the ApiService instance to each page
     _pages = [
-      const _DashboardPage(),
-      _RecordsPage(onRecordAdded: () => setState(() {})),
-      const _NotificationsPage(),
-      _ProfilePage(),
+      _DashboardPage(key: _dashboardPageKey, apiService: _apiService),
+      _RecordsPage(key: _recordsPageKey, apiService: _apiService),
+      _NotificationsPage(apiService: _apiService),
+      const _ProfilePage(),
     ];
+  }
+  
+  void _triggerRefresh() {
+    // Refresh the pages using their GlobalKeys
+    _dashboardPageKey.currentState?.refreshStats();
+    _recordsPageKey.currentState?.refreshRecords();
+    setState(() {
+      _hasNewAlerts = true; 
+    });
   }
 
   void _onItemTapped(int index) {
     setState(() {
       _selectedIndex = index;
       if (index == 2) {
-        _hasNewNotifications = false;
+        _hasNewAlerts = false;
       }
     });
   }
@@ -43,22 +56,15 @@ class _FarmerDashboardState extends State<FarmerDashboard> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: IndexedStack(
-        index: _selectedIndex,
-        children: _pages,
-      ),
+      body: IndexedStack(index: _selectedIndex, children: _pages),
       floatingActionButton: _selectedIndex == 1
           ? FloatingActionButton.extended(
               onPressed: () {
                 Navigator.push<bool>(
                   context,
-                  MaterialPageRoute(
-                    builder: (context) => AMUDetailsForm(userRole: 'Farmer'),
-                  ),
+                  MaterialPageRoute(builder: (context) => AMUDetailsForm(userRole: 'Farmer')),
                 ).then((value) {
-                  if (value == true) {
-                    setState(() {});
-                  }
+                  if (value == true) _triggerRefresh();
                 });
               },
               backgroundColor: const Color(0xFF558B2F),
@@ -74,45 +80,43 @@ class _FarmerDashboardState extends State<FarmerDashboard> {
         unselectedItemColor: Colors.white70,
         type: BottomNavigationBarType.fixed,
         items: <BottomNavigationBarItem>[
-          const BottomNavigationBarItem(
-            icon: Icon(Icons.dashboard_rounded),
-            label: 'Dashboard (डैशबोर्ड)',
-          ),
-          const BottomNavigationBarItem(
-            icon: Icon(Icons.folder_copy_rounded),
-            label: 'Records (रिकॉर्ड्स)',
-          ),
+          const BottomNavigationBarItem(icon: Icon(Icons.dashboard_rounded), label: 'Dashboard (डैशबोर्ड)'),
+          const BottomNavigationBarItem(icon: Icon(Icons.folder_copy_rounded), label: 'Records (रिकॉर्ड्स)'),
           BottomNavigationBarItem(
-            icon: Badge(
-              isLabelVisible: _hasNewNotifications,
-              child: const Icon(Icons.notifications_rounded),
-            ),
+            icon: Badge(isLabelVisible: _hasNewAlerts, child: const Icon(Icons.notifications_rounded)),
             label: 'Alerts (सूचनाएं)',
           ),
-          const BottomNavigationBarItem(
-            icon: Icon(Icons.person_rounded),
-            label: 'Profile (प्रोफ़ाइल)',
-          ),
+          const BottomNavigationBarItem(icon: Icon(Icons.person_rounded), label: 'Profile (प्रोफ़ाइल)'),
         ],
       ),
     );
   }
 }
 
-// ===================================
-// PAGE 1: DASHBOARD
-// ===================================
-class _DashboardPage extends StatelessWidget {
-  const _DashboardPage();
+class _DashboardPage extends StatefulWidget {
+  final ApiService apiService;
+  const _DashboardPage({required this.apiService, super.key});
+  @override
+  State<_DashboardPage> createState() => _DashboardPageState();
+}
+
+class _DashboardPageState extends State<_DashboardPage> {
+  Future<Map<String, dynamic>>? _statsFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _statsFuture = widget.apiService.fetchFarmerStats(DataStore.currentUser);
+  }
+
+  void refreshStats() {
+    setState(() {
+      _statsFuture = widget.apiService.fetchFarmerStats(DataStore.currentUser);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
-    final records = DataStore.records;
-    final total = records.length;
-    final approved = records.where((r) => r.status == 'approved').length;
-    final rejected = records.where((r) => r.status == 'rejected').length;
-    final percentage = total > 0 ? (approved / total) * 100 : 0.0;
-
     return Scaffold(
       appBar: AppBar(
         foregroundColor: Colors.white,
@@ -120,22 +124,38 @@ class _DashboardPage extends StatelessWidget {
         title: const Text('Farmer Dashboard (किसान डैशबोर्ड)'),
         actions: [IconButton(icon: const Icon(Icons.logout), onPressed: () => logout(context))],
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(16.0),
-        children: [
-          Text(
-            'Welcome (नमस्ते), ${DataStore.currentUser}!',
-            style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 8),
-          Text('Here is your activity summary.', style: TextStyle(fontSize: 16, color: Colors.grey.shade600)),
-          const SizedBox(height: 24),
-          _buildStatCard('Total Applications (कुल आवेदन)', '$total', Icons.all_inbox, Colors.blue.shade700),
-          const SizedBox(height: 16),
-          _buildStatCard('Approval % (स्वीकृति %)', '${percentage.toStringAsFixed(1)}%', Icons.check_circle, Colors.green.shade700),
-          const SizedBox(height: 16),
-          _buildStatCard('Rejected Applications (अस्वीकृत)', '$rejected', Icons.cancel, Colors.red.shade700),
-        ],
+      body: FutureBuilder<Map<String, dynamic>>(
+        future: _statsFuture,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (snapshot.hasError) {
+            return Center(child: Text('Error: ${snapshot.error}'));
+          }
+          if (!snapshot.hasData || snapshot.data!.isEmpty) {
+            return const Center(child: Text('No stats available.'));
+          }
+
+          final stats = snapshot.data!;
+          return RefreshIndicator(
+            onRefresh: () async { refreshStats(); },
+            child: ListView(
+              padding: const EdgeInsets.all(16.0),
+              children: [
+                Text('Welcome (नमस्ते), ${DataStore.currentUser}!', style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 8),
+                Text('Here is your activity summary.', style: TextStyle(fontSize: 16, color: Colors.grey.shade600)),
+                const SizedBox(height: 24),
+                _buildStatCard('Total Applications (कुल आवेदन)', '${stats['total'] ?? 0}', Icons.all_inbox, Colors.blue.shade700),
+                const SizedBox(height: 16),
+                _buildStatCard('Approval % (स्वीकृति %)', '${stats['percentage'] ?? 0.0}%', Icons.check_circle, Colors.green.shade700),
+                const SizedBox(height: 16),
+                _buildStatCard('Rejected Applications (अस्वीकृत)', '${stats['rejected'] ?? 0}', Icons.cancel, Colors.red.shade700),
+              ],
+            ),
+          );
+        },
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => showPlaceholderDialog(context, 'Video Consultation (वीडियो सलाह)'),
@@ -169,35 +189,59 @@ class _DashboardPage extends StatelessWidget {
         ),
       ),
     );
-  }
+  }  
 }
 
-// ===================================
-// PAGE 2: RECORDS
-// ===================================
-class _RecordsPage extends StatelessWidget {
-  final VoidCallback onRecordAdded;
-  const _RecordsPage({required this.onRecordAdded});
+class _RecordsPage extends StatefulWidget {
+  final ApiService apiService;
+  const _RecordsPage({required this.apiService, super.key});
+  @override
+  State<_RecordsPage> createState() => _RecordsPageState();
+}
+
+class _RecordsPageState extends State<_RecordsPage> {
+  Future<List<AMURecord>>? _recordsFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _recordsFuture = widget.apiService.fetchFarmerRecords(DataStore.currentUser);
+  }
+
+  void refreshRecords() {
+    setState(() {
+      _recordsFuture = widget.apiService.fetchFarmerRecords(DataStore.currentUser);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
-    final records = DataStore.records;
-
-    return Scaffold(
+     return Scaffold(
       appBar: AppBar(
         backgroundColor: const Color(0xFF558B2F),
         foregroundColor: Colors.white,
         title: const Text('Treatment Records (उपचार रिकॉर्ड्स)'),
       ),
-      body: records.isEmpty
-          ? Center(
-              child: Text(
-                'No records found. (कोई रिकॉर्ड नहीं मिला)',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 16, color: Colors.grey.shade600),
-              ),
-            )
-          : ListView.builder(
+      body: FutureBuilder<List<AMURecord>>(
+        future: _recordsFuture,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (snapshot.hasError) {
+            return Center(child: Text('Error: ${snapshot.error}'));
+          }
+          if (!snapshot.hasData || snapshot.data!.isEmpty) {
+            return const Center(
+              child: Text('No records found. (कोई रिकॉर्ड नहीं मिला)',
+                  textAlign: TextAlign.center, style: TextStyle(fontSize: 16)),
+            );
+          }
+
+          final records = snapshot.data!;
+          return RefreshIndicator(
+            onRefresh: () async { refreshRecords(); },
+            child: ListView.builder(
               padding: const EdgeInsets.fromLTRB(8, 8, 8, 80),
               itemCount: records.length,
               itemBuilder: (context, index) {
@@ -207,13 +251,17 @@ class _RecordsPage extends StatelessWidget {
                   elevation: 2,
                   child: ListTile(
                     contentPadding: const EdgeInsets.all(16),
-                    title: Text('Animal ID (पशु ID): ${record.animalId}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                    title: Text('Animal ID (पशु ID): ${record.animalId}',
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                     subtitle: Text('Drug (दवा): ${record.antimicrobialName}\nDate (तारीख): ${record.date.toLocal().toString().split(' ')[0]}'),
                     trailing: _buildStatusChip(record.status),
                   ),
                 );
               },
             ),
+          );
+        },
+      ),
     );
   }
 
@@ -238,58 +286,80 @@ class _RecordsPage extends StatelessWidget {
   }
 }
 
-// ===================================
-// PAGE 3: ALERTS / NOTIFICATIONS
-// ===================================
-class _NotificationsPage extends StatelessWidget {
-  const _NotificationsPage();
+class _NotificationsPage extends StatefulWidget {
+  final ApiService apiService;
+  const _NotificationsPage({required this.apiService, super.key});
+  @override
+  State<_NotificationsPage> createState() => _NotificationsPageState();
+}
+
+class _NotificationsPageState extends State<_NotificationsPage> {
+  Future<List<dynamic>>? _alertsFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _alertsFuture = widget.apiService.fetchAlerts();
+  }
+
+  void refreshAlerts() {
+    setState(() {
+      _alertsFuture = widget.apiService.fetchAlerts();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
-    final records = DataStore.records;
-
     return Scaffold(
       appBar: AppBar(
         backgroundColor: const Color(0xFF558B2F),
         foregroundColor: Colors.white,
         title: const Text('Alerts (सूचनाएं)'),
       ),
-      body: records.isEmpty
-          ? Center(
-              child: Text(
-                'No notifications available. (कोई सूचना उपलब्ध नहीं है)',
-                style: TextStyle(fontSize: 16, color: Colors.grey.shade600),
-              ),
-            )
-          : ListView.builder(
+      body: FutureBuilder<List<dynamic>>(
+        future: _alertsFuture,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (snapshot.hasError) {
+            return Center(child: Text('Error: ${snapshot.error}'));
+          }
+          if (!snapshot.hasData || snapshot.data!.isEmpty) {
+            return const Center(
+              child: Text('No new alerts. (कोई नई सूचना नहीं है)', style: TextStyle(fontSize: 16)),
+            );
+          }
+          final alerts = snapshot.data!;
+          return RefreshIndicator(
+            onRefresh: () async { refreshAlerts(); },
+            child: ListView.builder(
               padding: const EdgeInsets.all(8.0),
-              itemCount: records.length,
+              itemCount: alerts.length,
               itemBuilder: (context, index) {
-                final record = records[index];
-                final nextDoseDate = record.date.add(const Duration(days: 90));
-                const withdrawalDays = 15;
-
+                final alert = alerts[index];
                 return Card(
                   margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                   elevation: 2,
                   child: ListTile(
                     leading: Icon(Icons.warning_amber_rounded, color: Colors.orange.shade800, size: 40),
-                    title: Text('Alert for Animal ID (पशु ID): ${record.animalId}'),
+                    title: Text('Alert for Animal ID (पशु ID): ${alert['animalId']}'),
                     subtitle: Text(
-                      'Next Dose (अगली खुराक): ${nextDoseDate.day}/${nextDoseDate.month}/${nextDoseDate.year}\nWithdrawal Period (निकासी अवधि): $withdrawalDays days',
+                      'Next Dosage Date: ${alert['nextDosageDate']}\nअगली खुराक की तारीख: ${alert['nextDosageDate']}\n\nWaiting Time: ${alert['waitingTime']} days\nप्रतीक्षा समय: ${alert['waitingTime']} दिन',
                     ),
                   ),
                 );
               },
             ),
+          );
+        },
+      ),
     );
   }
 }
 
-// ===================================
-// PAGE 4: PROFILE
-// ===================================
 class _ProfilePage extends StatefulWidget {
+  const _ProfilePage();
   @override
   _ProfilePageState createState() => _ProfilePageState();
 }

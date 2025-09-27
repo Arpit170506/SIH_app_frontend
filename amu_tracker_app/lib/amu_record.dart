@@ -4,11 +4,13 @@ class AMURecord {
   final String phoneNumber;
   final String antimicrobialName;
   final String animalType;
-  final String animalId; 
+  final String animalId;
   final String dosage;
   final String reason;
   final DateTime date;
   final String status;
+  // Added from backend
+  final String prescriptionId;
 
   AMURecord({
     required this.farmerName,
@@ -19,20 +21,24 @@ class AMURecord {
     required this.dosage,
     required this.reason,
     required this.date,
-    this.status = 'pending',
+    required this.status,
+    required this.prescriptionId,
   });
 
-  AMURecord copyWith({String? status}) {
+  // --- NEW FACTORY CONSTRUCTOR ---
+  // This creates an AMURecord from a JSON object
+  factory AMURecord.fromJson(Map<String, dynamic> json) {
     return AMURecord(
-      farmerName: this.farmerName,
-      phoneNumber: this.phoneNumber,
-      antimicrobialName: this.antimicrobialName,
-      animalType: this.animalType,
-      animalId: this.animalId,
-      dosage: this.dosage,
-      reason: this.reason,
-      date: this.date,
-      status: status ?? this.status,
+      farmerName: json['farmerName'],
+      phoneNumber: json['phoneNumber'],
+      antimicrobialName: json['antimicrobialName'],
+      animalType: json['animalType'],
+      animalId: json['animalId'],
+      dosage: json['dosage'],
+      reason: json['reasonForUse'], // Note the key name change
+      date: DateTime.parse(json['date']),
+      status: json['status'],
+      prescriptionId: json['prescriptionId'],
     );
   }
 }

@@ -1,44 +1,61 @@
 import 'package:flutter/material.dart';
-import '../data_store.dart';
+import '../api_service.dart'; // Import the new service
 import '../amu_record.dart';
 import '../utils/helpers.dart';
 import 'amu_details_form.dart';
 
+// ===================================================================
+// MAIN VET DASHBOARD WIDGET
+// ===================================================================
 class VetDashboard extends StatefulWidget {
   const VetDashboard({super.key});
-
   @override
   State<VetDashboard> createState() => _VetDashboardState();
 }
 
 class _VetDashboardState extends State<VetDashboard> {
   int _selectedIndex = 0;
+  bool _hasNewAlerts = false;
+  
+  final GlobalKey<_VetDashboardPageState> _dashboardPageKey = GlobalKey<_VetDashboardPageState>();
+  final GlobalKey<_VetRecordsPageState> _recordsPageKey = GlobalKey<_VetRecordsPageState>();
+  final GlobalKey<_VetAlertsPageState> _alertsPageKey = GlobalKey<_VetAlertsPageState>();
+
   late final List<Widget> _pages;
+  final ApiService _apiService = ApiService();
 
   @override
   void initState() {
     super.initState();
     _pages = [
-      _VetDashboardPage(onRecordUpdate: () => setState(() {})),
-      _VetRecordsPage(onRecordAdded: () => setState(() {})),
-      const _VetAlertsPage(),
-      _VetProfilePage(),
+      _VetDashboardPage(key: _dashboardPageKey, apiService: _apiService, onRecordUpdate: _refreshAllPages, onApproval: _triggerAlerts),
+      _VetRecordsPage(key: _recordsPageKey, apiService: _apiService, onRecordAdded: _refreshAllPages),
+      _VetAlertsPage(key: _alertsPageKey, apiService: _apiService),
+      const _VetProfilePage(),
     ];
+  }
+
+  void _refreshAllPages() {
+    _dashboardPageKey.currentState?.refreshRecords();
+    _recordsPageKey.currentState?.refreshRecords();
+    _alertsPageKey.currentState?.refreshAlerts();
+  }
+
+  void _triggerAlerts() {
+    setState(() => _hasNewAlerts = true);
   }
 
   void _onItemTapped(int index) {
     setState(() {
       _selectedIndex = index;
+      if (index == 2) _hasNewAlerts = false;
     });
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: IndexedStack(
-        index: _selectedIndex,
-        children: _pages,
-      ),
+      body: IndexedStack(index: _selectedIndex, children: _pages),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedIndex,
         onTap: _onItemTapped,
@@ -46,51 +63,72 @@ class _VetDashboardState extends State<VetDashboard> {
         selectedItemColor: Colors.white,
         unselectedItemColor: Colors.white70,
         type: BottomNavigationBarType.fixed,
-        items: const <BottomNavigationBarItem>[
+        items: <BottomNavigationBarItem>[
+          const BottomNavigationBarItem(icon: Icon(Icons.dashboard_rounded), label: 'Dashboard (डैशबोर्ड)'),
+          const BottomNavigationBarItem(icon: Icon(Icons.folder_copy_rounded), label: 'History (इतिहास)'),
           BottomNavigationBarItem(
-            icon: Icon(Icons.dashboard_rounded),
-            label: 'Dashboard (डैशबोर्ड)',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.folder_copy_rounded),
-            label: 'History (इतिहास)',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.notifications_rounded),
+            icon: Badge(isLabelVisible: _hasNewAlerts, child: const Icon(Icons.notifications_rounded)),
             label: 'Alerts (सूचनाएं)',
           ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.person_rounded),
-            label: 'Profile (प्रोफ़ाइल)',
-          ),
+          const BottomNavigationBarItem(icon: Icon(Icons.person_rounded), label: 'Profile (प्रोफ़ाइल)'),
         ],
       ),
     );
   }
 }
 
-class _VetDashboardPage extends StatelessWidget {
+// ===================================
+// PAGE 1: REVIEW PENDING
+// ===================================
+class _VetDashboardPage extends StatefulWidget {
+  final ApiService apiService;
   final VoidCallback onRecordUpdate;
-  const _VetDashboardPage({required this.onRecordUpdate});
+  final VoidCallback onApproval;
+  const _VetDashboardPage({required this.apiService, required this.onRecordUpdate, required this.onApproval, super.key});
+  @override
+  State<_VetDashboardPage> createState() => _VetDashboardPageState();
+}
 
-  void _updateRecordStatus(BuildContext context, AMURecord record, String newStatus) {
-    final index = DataStore.records.indexWhere((r) => r == record);
-    if (index != -1) {
-      DataStore.records[index] = record.copyWith(status: newStatus);
-      onRecordUpdate();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Record has been ${newStatus.toLowerCase()}!'),
-          backgroundColor: newStatus == 'approved' ? Colors.green : Colors.red,
-        ),
-      );
+class _VetDashboardPageState extends State<_VetDashboardPage> {
+  Future<List<AMURecord>>? _pendingRecordsFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _pendingRecordsFuture = widget.apiService.fetchPendingRecords();
+  }
+  
+  void refreshRecords() {
+    setState(() {
+      _pendingRecordsFuture = widget.apiService.fetchPendingRecords();
+    });
+  }
+
+  Future<void> _updateRecordStatus(BuildContext context, AMURecord record, String newStatus) async {
+    try {
+      final success = await widget.apiService.updateRecordStatus(record.prescriptionId, newStatus);
+      if (success && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Record has been ${newStatus.toLowerCase()}!'),
+            backgroundColor: newStatus == 'approved' ? Colors.green : Colors.red,
+          ),
+        );
+        
+        if (newStatus == 'approved') {
+          widget.onApproval();
+        }
+        widget.onRecordUpdate();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error updating status: $e')));
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final pendingRecords = DataStore.records.where((r) => r.status == 'pending').toList();
-
     return Scaffold(
       appBar: AppBar(
         backgroundColor: const Color(0xFF558B2F),
@@ -98,14 +136,22 @@ class _VetDashboardPage extends StatelessWidget {
         title: const Text('Review Pending (लंबित समीक्षा)'),
         actions: [IconButton(icon: const Icon(Icons.logout), onPressed: () => logout(context))],
       ),
-      body: pendingRecords.isEmpty
-          ? Center(
-              child: Text(
-                'No pending records to review.',
-                style: TextStyle(fontSize: 16, color: Colors.grey.shade600),
-              ),
-            )
-          : ListView.builder(
+      body: FutureBuilder<List<AMURecord>>(
+        future: _pendingRecordsFuture,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (snapshot.hasError) {
+            return Center(child: Text('Error: ${snapshot.error}'));
+          }
+          if (!snapshot.hasData || snapshot.data!.isEmpty) {
+            return const Center(child: Text('No pending records to review.', style: TextStyle(fontSize: 16)));
+          }
+          final pendingRecords = snapshot.data!;
+          return RefreshIndicator(
+            onRefresh: () async { refreshRecords(); },
+            child: ListView.builder(
               padding: const EdgeInsets.all(8.0),
               itemCount: pendingRecords.length,
               itemBuilder: (context, index) {
@@ -149,13 +195,38 @@ class _VetDashboardPage extends StatelessWidget {
                 );
               },
             ),
+          );
+        },
+      ),
     );
   }
 }
 
-class _VetRecordsPage extends StatelessWidget {
+// ===================================
+// PAGE 2: ALL RECORDS (HISTORY)
+// ===================================
+class _VetRecordsPage extends StatefulWidget {
+  final ApiService apiService;
   final VoidCallback onRecordAdded;
-  const _VetRecordsPage({required this.onRecordAdded});
+  const _VetRecordsPage({required this.apiService, required this.onRecordAdded, super.key});
+  @override
+  State<_VetRecordsPage> createState() => _VetRecordsPageState();
+}
+
+class _VetRecordsPageState extends State<_VetRecordsPage> {
+  Future<List<AMURecord>>? _allRecordsFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _allRecordsFuture = widget.apiService.fetchAllRecords();
+  }
+
+  void refreshRecords() {
+    setState(() {
+      _allRecordsFuture = widget.apiService.fetchAllRecords();
+    });
+  }
 
   Color _getStatusColor(String status) {
     switch (status) {
@@ -167,22 +238,28 @@ class _VetRecordsPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final allRecords = DataStore.records;
-
     return Scaffold(
       appBar: AppBar(
         backgroundColor: const Color(0xFF558B2F),
         foregroundColor: Colors.white,
         title: const Text('All Records History (सभी रिकॉर्ड)'),
       ),
-      body: allRecords.isEmpty
-          ? Center(
-              child: Text(
-                'No records in the system yet.',
-                style: TextStyle(fontSize: 16, color: Colors.grey.shade600),
-              ),
-            )
-          : ListView.builder(
+      body: FutureBuilder<List<AMURecord>>(
+        future: _allRecordsFuture,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (snapshot.hasError) {
+            return Center(child: Text('Error: ${snapshot.error}'));
+          }
+          if (!snapshot.hasData || snapshot.data!.isEmpty) {
+            return const Center(child: Text('No records in the system yet.', style: TextStyle(fontSize: 16)));
+          }
+          final allRecords = snapshot.data!;
+          return RefreshIndicator(
+            onRefresh: () async { refreshRecords(); },
+            child: ListView.builder(
               padding: const EdgeInsets.fromLTRB(8, 8, 8, 80),
               itemCount: allRecords.length,
               itemBuilder: (context, index) {
@@ -205,11 +282,16 @@ class _VetRecordsPage extends StatelessWidget {
                 );
               },
             ),
+          );
+        },
+      ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () {
           Navigator.push<bool>(context, MaterialPageRoute(builder: (context) => AMUDetailsForm(userRole: 'Vet')))
               .then((value) {
-            if (value == true) onRecordAdded();
+            if (value == true) {
+              widget.onRecordAdded();
+            }
           });
         },
         backgroundColor: const Color(0xFF558B2F),
@@ -220,8 +302,30 @@ class _VetRecordsPage extends StatelessWidget {
   }
 }
 
-class _VetAlertsPage extends StatelessWidget {
-  const _VetAlertsPage();
+// ===================================
+// PAGE 3: ALERTS
+// ===================================
+class _VetAlertsPage extends StatefulWidget {
+  final ApiService apiService;
+  const _VetAlertsPage({required this.apiService, super.key});
+  @override
+  State<_VetAlertsPage> createState() => _VetAlertsPageState();
+}
+
+class _VetAlertsPageState extends State<_VetAlertsPage> {
+  Future<List<dynamic>>? _alertsFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _alertsFuture = widget.apiService.fetchAlerts();
+  }
+  
+  void refreshAlerts() {
+    setState(() {
+      _alertsFuture = widget.apiService.fetchAlerts();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -231,37 +335,52 @@ class _VetAlertsPage extends StatelessWidget {
         foregroundColor: Colors.white,
         title: const Text('System Alerts (सिस्टम सूचनाएं)'),
       ),
-      body: DataStore.records.isEmpty
-          ? Center(
-              child: Text(
-                'No notifications available.',
-                style: TextStyle(fontSize: 16, color: Colors.grey.shade600),
-              ),
-            )
-          : ListView.builder(
+      body: FutureBuilder<List<dynamic>>(
+        future: _alertsFuture,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (snapshot.hasError) {
+            return Center(child: Text('Error: ${snapshot.error}'));
+          }
+          if (!snapshot.hasData || snapshot.data!.isEmpty) {
+            return const Center(child: Text('No new alerts. (कोई नई सूचना नहीं है)', style: TextStyle(fontSize: 16)));
+          }
+          final alerts = snapshot.data!;
+          return RefreshIndicator(
+            onRefresh: () async { refreshAlerts(); },
+            child: ListView.builder(
               padding: const EdgeInsets.all(8.0),
-              itemCount: DataStore.records.length,
+              itemCount: alerts.length,
               itemBuilder: (context, index) {
-                final record = DataStore.records[index];
-                final nextDoseDate = record.date.add(const Duration(days: 90));
-                const withdrawalDays = 15;
+                final alert = alerts[index];
                 return Card(
                   margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  elevation: 2,
                   child: ListTile(
-                    leading: Icon(Icons.warning_amber_rounded, color: Colors.orange.shade800, size: 36),
-                    title: Text('Alert for (सूचना): ${record.animalId} (Farmer: ${record.farmerName})'),
+                    leading: Icon(Icons.warning_amber_rounded, color: Colors.orange.shade800, size: 40),
+                    title: Text('Alert for Farmer: ${alert['farmerName']} (Animal ID: ${alert['animalId']})'),
                     subtitle: Text(
-                      'Next Dose (अगली खुराक): ${nextDoseDate.day}/${nextDoseDate.month}/${nextDoseDate.year}\nWithdrawal (निकासी): $withdrawalDays days',
+                      'Next Dosage Date: ${alert['nextDosageDate']}\nअगली खुराक की तारीख: ${alert['nextDosageDate']}\n\nWaiting Time: ${alert['waitingTime']} days\nप्रतीक्षा समय: ${alert['waitingTime']} दिन',
                     ),
                   ),
                 );
               },
             ),
+          );
+        },
+      ),
     );
   }
 }
 
+
+// ===================================
+// PAGE 4: PROFILE (No changes needed here as it's static)
+// ===================================
 class _VetProfilePage extends StatefulWidget {
+  const _VetProfilePage({super.key});
   @override
   _VetProfilePageState createState() => _VetProfilePageState();
 }
@@ -276,10 +395,10 @@ class _VetProfilePageState extends State<_VetProfilePage> {
   @override
   void initState() {
     super.initState();
-    _nameController = TextEditingController(text: DataStore.currentUser);
+    _nameController = TextEditingController(text: 'Dr. Aanchal Yadav'); // Assuming static for now
     _licenseController = TextEditingController(text: 'VET12345');
     _phoneController = TextEditingController(text: '9876543210');
-    _emailController = TextEditingController(text: '${DataStore.currentUser}@vet.com');
+    _emailController = TextEditingController(text: 'aanchal.yadav@vet.com');
   }
   
   @override

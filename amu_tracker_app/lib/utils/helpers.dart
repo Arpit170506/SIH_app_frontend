@@ -27,6 +27,27 @@ void logout(BuildContext context) {
   );
 }
 
+// --- NEW REUSABLE DIALOG FUNCTION ---
+void showSuccessDialog(BuildContext context, String title, String content, VoidCallback onOkPressed) {
+  showDialog(
+    context: context,
+    // Prevent dismissing the dialog by tapping outside of it
+    barrierDismissible: false,
+    builder: (_) => AlertDialog(
+      title: Text(title),
+      content: Text(content),
+      actions: [
+        TextButton(
+          onPressed: onOkPressed,
+          child: const Text('OK (ठीक है)'),
+        ),
+      ],
+    ),
+  );
+}
+
+
+// This function can still be used for simple placeholders
 void showPlaceholderDialog(BuildContext context, String title) {
   showDialog(
     context: context,
